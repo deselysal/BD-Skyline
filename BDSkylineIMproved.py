@@ -1,22 +1,16 @@
 import numpy as np
+from treesimulator.mtbd_models import Model
 
 INFECTED = 'Infected'
 
-class Model:
-    def __init__(self, states=None, transmission_rates=None, removal_rates=None, ps=None, *args, **kwargs):
-        self.states = np.array(states)
-        self.transmission_rates = np.array(transmission_rates) if transmission_rates is not None else np.zeros((1, 1))
-        self.removal_rates = np.array(removal_rates) if removal_rates is not None else np.zeros(1)
-        self.ps = np.array(ps) if ps is not None else np.zeros(1)
-        self.n_recipients = None
 
 class BirthDeathSkylineModel(Model):
     def __init__(self, params, *args, **kwargs):
         if params.shape[0] != 4:
-            raise ValueError("La matriz de parámetros debe tener exactamente 4 filas (la, psi, p, t).")
+            raise ValueError("The parameter matrix must have exactly 4 rows (la, psi, p, t).")
         
         self.ModelsList = []
-        self.current_model_name = None  # Variable para almacenar el nombre del modelo actual
+        self.current_model_name = None  # Stores the name of the active model
         
         for i in range(params.shape[1]):
             model_name = f'BD{i+1}'
@@ -28,37 +22,58 @@ class BirthDeathSkylineModel(Model):
                 't': params[3, i]
             }
             self.ModelsList.append(model_params)
-    
+        
+        # Initialize states correctly using super().__init__()
+        super().__init__(states=[INFECTED])
+
+        self.la = None
+        self.psi = None
+
     def select_model(self, time):
-        for model_params in self.ModelsList:
-            if time <= model_params['t']:
+        """Select the appropriate model based on the given time."""
+        for i, model_params in enumerate(self.ModelsList):
+            # Define the start and end of the interval
+            start_t = 0 if i == 0 else self.ModelsList[i - 1]["t"]
+            end_t = model_params["t"]
+
+            # Check if time lies within the current interval
+            if start_t <= time < end_t:
+                # Configure and return the corresponding model
+                if self.current_model_name != model_params['Model']:
+                    print(f"Switching to model {model_params['Model']} for time {time}")
                 return self._configure_model_with_parameters(model_params)
-        return None
+
+        # If time is beyond the last interval, return the final model
+        last_model_params = self.ModelsList[-1]
+        if self.current_model_name != last_model_params['Model']:
+            print(f"Switching to the final model {last_model_params['Model']} for time {time}")
+        return self._configure_model_with_parameters(last_model_params)
 
     def _configure_model_with_parameters(self, model_params):
+        """Configure the BD-Skyline model with the selected time-dependent parameters."""
         la = model_params['la']
         psi = model_params['psi']
         p = model_params['p']
-        
-        # Configuración de los parámetros específicos para el modelo actual
-        las = la * np.ones(shape=(1, 1), dtype=np.float64)
-        
-        # Inicialización de atributos para el modelo seleccionado
+
+        # Setup transmission and removal rates
+        las = np.array([[la]], dtype=np.float64)
+
+        # Call parent Model constructor
         super().__init__(states=[INFECTED], transmission_rates=las, removal_rates=[psi], ps=[p])
+
+        # Store parameters
         self.la = la
         self.psi = psi
-        
-        # Almacenar el nombre del modelo actual
         self.current_model_name = model_params['Model']
-        
+
         return self
 
     def get_name(self):
-        # Devuelve el nombre específico del modelo actual
+        """Return the name of the current BD-Skyline model."""
         return self.current_model_name if self.current_model_name else 'BD'
 
     def get_epidemiological_parameters(self):
-        """Converts rate parameters to the epidemiological ones"""
+        """Convert rate parameters into epidemiological measures."""
         if self.n_recipients is None:
             self.n_recipients = np.ones(len(self.states))
         
@@ -74,21 +89,20 @@ class BirthDeathSkylineModel(Model):
             result['avg recipient number per transmission'] = self.n_recipients[0]
         return result
 
-# Ejemplo de uso
-params = np.array([
-    [2.0, 1.5, 3.0], # las
-    [0.1, 0.2, 0.3], # psis
-    [0.5, 0.6, 0.7], # ps
-    [2.0, 5.0, 10.0] # ts
-])
 
-skyline_model = BirthDeathSkylineModel(params)
+# Example usage
+#   [0.1, 0.2, 0.3],  # psis
+   # [0.5, 0.6, 0.7],  # ps
+    #[2.0, 5.0, 10.0]  # ts
+#])
 
-time = 6.0
-actual_model = skyline_model.select_model(time)
+#skyline_model = BirthDeathSkylineModel(params)
 
-if actual_model:
-    print(actual_model.get_name())  # Imprime el nombre específico del modelo, como BD0, BD1, etc.
-    print(actual_model.get_epidemiological_parameters())  # Usa el método adaptado para parámetros de este modelo
-else:
-    print("No hay modelo disponible para este tiempo.")
+#time = 11.0
+#actual_model = skyline_model.select_model(time)
+
+#if actual_model:
+    #print(actual_model.get_name())  # Prints the specific model name, like BD1, BD2, etc.
+    #print(actual_model.get_epidemiological_parameters())  # Outputs epidemiological parameters
+#else:
+    #print("No model available for this time.")
